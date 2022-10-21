@@ -14,7 +14,7 @@ import * as dom from 'vs/base/browser/dom';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { Emitter, Event } from 'vs/base/common/event';
 import { Keybinding, ResolvedKeybinding, SimpleKeybinding, createKeybinding } from 'vs/base/common/keybindings';
-import { IDisposable, IReference, ImmortalReference, toDisposable, DisposableStore, Disposable } from 'vs/base/common/lifecycle';
+import { IDisposable, IReference, ImmortalReference, toDisposable, DisposableStore, Disposable, combinedDisposable } from 'vs/base/common/lifecycle';
 import { OS, isLinux, isMacintosh } from 'vs/base/common/platform';
 import Severity from 'vs/base/common/severity';
 import { URI } from 'vs/base/common/uri';
@@ -323,9 +323,16 @@ export class StandaloneCommandService implements ICommandService {
 	}
 }
 
+export interface IKeybindingRule {
+	keybinding: number;
+	command?: string | null;
+	commandArgs?: any;
+	when?: ContextKeyExpression | null;
+}
+
 export class StandaloneKeybindingService extends AbstractKeybindingService {
 	private _cachedResolver: KeybindingResolver | null;
-	private readonly _dynamicKeybindings: IKeybindingItem[];
+	private _dynamicKeybindings: IKeybindingItem[];
 	private readonly _domNodeListeners: DomNodeListeners[];
 
 	constructor(
@@ -403,39 +410,45 @@ export class StandaloneKeybindingService extends AbstractKeybindingService {
 		codeEditorService.listDiffEditors().forEach(addDiffEditor);
 	}
 
-	public addDynamicKeybinding(commandId: string, _keybinding: number, handler: ICommandHandler, when: ContextKeyExpression | undefined): IDisposable {
-		const keybinding = createKeybinding(_keybinding, OS);
+	public addDynamicKeybinding(command: string, keybinding: number, handler: ICommandHandler, when: ContextKeyExpression | undefined): IDisposable {
+		return combinedDisposable(
+			CommandsRegistry.registerCommand(command, handler),
+			this.addDynamicKeybindings([{
+				keybinding,
+				command,
+				when
+			}])
+		);
+	}
 
-		const toDispose = new DisposableStore();
-
-		if (keybinding) {
-			this._dynamicKeybindings.push({
-				keybinding: keybinding.parts,
-				command: commandId,
-				when: when,
+	public addDynamicKeybindings(rules: IKeybindingRule[]): IDisposable {
+		const entries: IKeybindingItem[] = rules.map((rule) => {
+			const keybinding = createKeybinding(rule.keybinding, OS);
+			return {
+				keybinding: keybinding?.parts ?? null,
+				command: rule.command ?? null,
+				commandArgs: rule.commandArgs,
+				when: rule.when,
 				weight1: 1000,
 				weight2: 0,
 				extensionId: null,
 				isBuiltinExtension: false
-			});
-
-			toDispose.add(toDisposable(() => {
-				for (let i = 0; i < this._dynamicKeybindings.length; i++) {
-					const kb = this._dynamicKeybindings[i];
-					if (kb.command === commandId) {
-						this._dynamicKeybindings.splice(i, 1);
-						this.updateResolver();
-						return;
-					}
-				}
-			}));
-		}
-
-		toDispose.add(CommandsRegistry.registerCommand(commandId, handler));
+			};
+		});
+		this._dynamicKeybindings = this._dynamicKeybindings.concat(entries);
 
 		this.updateResolver();
 
-		return toDispose;
+		return toDisposable(() => {
+			// Search the first entry and remove them all since they will be contiguous
+			for (let i = 0; i < this._dynamicKeybindings.length; i++) {
+				if (this._dynamicKeybindings[i] === entries[0]) {
+					this._dynamicKeybindings.splice(i, entries.length);
+					this.updateResolver();
+					return;
+				}
+			}
+		});
 	}
 
 	private updateResolver(): void {
@@ -817,7 +830,8 @@ class StandaloneBulkEditService implements IBulkEditService {
 		}
 
 		return {
-			ariaSummary: strings.format(StandaloneServicesNLS.bulkEditServiceSummary, totalEdits, totalFiles)
+			ariaSummary: strings.format(StandaloneServicesNLS.bulkEditServiceSummary, totalEdits, totalFiles),
+			isApplied: totalEdits > 0
 		};
 	}
 }
@@ -948,9 +962,11 @@ class StandaloneContextMenuService extends ContextMenuService {
 		@INotificationService notificationService: INotificationService,
 		@IContextViewService contextViewService: IContextViewService,
 		@IKeybindingService keybindingService: IKeybindingService,
-		@IThemeService themeService: IThemeService
+		@IThemeService themeService: IThemeService,
+		@IMenuService menuService: IMenuService,
+		@IContextKeyService contextKeyService: IContextKeyService,
 	) {
-		super(telemetryService, notificationService, contextViewService, keybindingService, themeService);
+		super(telemetryService, notificationService, contextViewService, keybindingService, themeService, menuService, contextKeyService);
 		this.configure({ blockMouse: false }); // we do not want that in the standalone editor
 	}
 }
@@ -959,38 +975,38 @@ export interface IEditorOverrideServices {
 	[index: string]: any;
 }
 
-registerSingleton(IConfigurationService, StandaloneConfigurationService);
-registerSingleton(ITextResourceConfigurationService, StandaloneResourceConfigurationService);
-registerSingleton(ITextResourcePropertiesService, StandaloneResourcePropertiesService);
-registerSingleton(IWorkspaceContextService, StandaloneWorkspaceContextService);
-registerSingleton(ILabelService, StandaloneUriLabelService);
-registerSingleton(ITelemetryService, StandaloneTelemetryService);
-registerSingleton(IDialogService, StandaloneDialogService);
-registerSingleton(INotificationService, StandaloneNotificationService);
-registerSingleton(IMarkerService, MarkerService);
-registerSingleton(ILanguageService, StandaloneLanguageService);
-registerSingleton(IStandaloneThemeService, StandaloneThemeService);
-registerSingleton(ILogService, StandaloneLogService);
-registerSingleton(IModelService, ModelService);
-registerSingleton(IMarkerDecorationsService, MarkerDecorationsService);
-registerSingleton(IContextKeyService, ContextKeyService);
-registerSingleton(IProgressService, StandaloneProgressService);
-registerSingleton(IEditorProgressService, StandaloneEditorProgressService);
-registerSingleton(IStorageService, InMemoryStorageService);
-registerSingleton(IEditorWorkerService, EditorWorkerService);
-registerSingleton(IBulkEditService, StandaloneBulkEditService);
-registerSingleton(IWorkspaceTrustManagementService, StandaloneWorkspaceTrustManagementService);
-registerSingleton(ITextModelService, StandaloneTextModelService);
-registerSingleton(IAccessibilityService, AccessibilityService);
-registerSingleton(IListService, ListService);
-registerSingleton(ICommandService, StandaloneCommandService);
-registerSingleton(IKeybindingService, StandaloneKeybindingService);
-registerSingleton(IQuickInputService, StandaloneQuickInputService);
-registerSingleton(IContextViewService, StandaloneContextViewService);
-registerSingleton(IOpenerService, OpenerService);
-registerSingleton(IClipboardService, BrowserClipboardService);
-registerSingleton(IContextMenuService, StandaloneContextMenuService);
-registerSingleton(IMenuService, MenuService);
+registerSingleton(IConfigurationService, StandaloneConfigurationService, false);
+registerSingleton(ITextResourceConfigurationService, StandaloneResourceConfigurationService, false);
+registerSingleton(ITextResourcePropertiesService, StandaloneResourcePropertiesService, false);
+registerSingleton(IWorkspaceContextService, StandaloneWorkspaceContextService, false);
+registerSingleton(ILabelService, StandaloneUriLabelService, false);
+registerSingleton(ITelemetryService, StandaloneTelemetryService, false);
+registerSingleton(IDialogService, StandaloneDialogService, false);
+registerSingleton(INotificationService, StandaloneNotificationService, false);
+registerSingleton(IMarkerService, MarkerService, false);
+registerSingleton(ILanguageService, StandaloneLanguageService, false);
+registerSingleton(IStandaloneThemeService, StandaloneThemeService, false);
+registerSingleton(ILogService, StandaloneLogService, false);
+registerSingleton(IModelService, ModelService, false);
+registerSingleton(IMarkerDecorationsService, MarkerDecorationsService, false);
+registerSingleton(IContextKeyService, ContextKeyService, false);
+registerSingleton(IProgressService, StandaloneProgressService, false);
+registerSingleton(IEditorProgressService, StandaloneEditorProgressService, false);
+registerSingleton(IStorageService, InMemoryStorageService, false);
+registerSingleton(IEditorWorkerService, EditorWorkerService, false);
+registerSingleton(IBulkEditService, StandaloneBulkEditService, false);
+registerSingleton(IWorkspaceTrustManagementService, StandaloneWorkspaceTrustManagementService, false);
+registerSingleton(ITextModelService, StandaloneTextModelService, false);
+registerSingleton(IAccessibilityService, AccessibilityService, false);
+registerSingleton(IListService, ListService, false);
+registerSingleton(ICommandService, StandaloneCommandService, false);
+registerSingleton(IKeybindingService, StandaloneKeybindingService, false);
+registerSingleton(IQuickInputService, StandaloneQuickInputService, false);
+registerSingleton(IContextViewService, StandaloneContextViewService, false);
+registerSingleton(IOpenerService, OpenerService, false);
+registerSingleton(IClipboardService, BrowserClipboardService, false);
+registerSingleton(IContextMenuService, StandaloneContextMenuService, false);
+registerSingleton(IMenuService, MenuService, false);
 
 /**
  * We don't want to eagerly instantiate services because embedders get a one time chance

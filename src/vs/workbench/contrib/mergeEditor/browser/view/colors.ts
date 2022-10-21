@@ -14,8 +14,20 @@ export const diff = registerColor(
 
 export const diffWord = registerColor(
 	'mergeEditor.change.word.background',
-	{ dark: '#9bb9551e', light: '#9bb9551e', hcDark: '#9bb9551e', hcLight: '#9bb9551e', },
+	{ dark: '#9ccc2c33', light: '#9ccc2c66', hcDark: '#9ccc2c33', hcLight: '#9ccc2c66', },
 	localize('mergeEditor.change.word.background', 'The background color for word changes.')
+);
+
+export const diffBase = registerColor(
+	'mergeEditor.changeBase.background',
+	{ dark: '#4B1818FF', light: '#FFCCCCFF', hcDark: '#4B1818FF', hcLight: '#FFCCCCFF', },
+	localize('mergeEditor.changeBase.background', 'The background color for changes in base.')
+);
+
+export const diffWordBase = registerColor(
+	'mergeEditor.changeBase.word.background',
+	{ dark: '#6F1313FF', light: '#FFA3A3FF', hcDark: '#6F1313FF', hcLight: '#FFA3A3FF', },
+	localize('mergeEditor.changeBase.word.background', 'The background color for word changes in base.')
 );
 
 export const conflictBorderUnhandledUnfocused = registerColor(
