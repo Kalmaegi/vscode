@@ -46,14 +46,19 @@ export class GithubRemoteSourceProvider implements RemoteSourceProvider {
 		]);
 
 		const map = new Map<string, RemoteSource>();
+		const userMap = new Map<string, RemoteSource>();
 
 		for (const group of all) {
 			for (const remoteSource of group) {
-				map.set(remoteSource.name, remoteSource);
+				if (group === this.userReposCache) {
+					userMap.set(remoteSource.name, remoteSource);
+				} else {
+					map.set(remoteSource.name, remoteSource);
+				}
 			}
 		}
 
-		return [...map.values()];
+		return [...userMap.values()].concat([...map.values()]);
 	}
 
 	private async getUserRemoteSources(octokit: Octokit, query?: string): Promise<RemoteSource[]> {
